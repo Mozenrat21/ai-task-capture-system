@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.dictionaries import ComplexityDict, PriorityDict, TaskTypeDict
 from app.models.task import Task
 from app.models.task_preview import TaskPreview
-from app.schemas.task import TaskCreatePreviewRequest
+from app.schemas.task import TaskClosePreviewRequest, TaskCreatePreviewRequest
 from app.services.event_service import create_task_event
 from app.services.score_service import calculate_auto_task_score
 from app.services.status_service import calculate_auto_status
@@ -19,6 +19,7 @@ PREVIEW_STATUS_CONFIRMED = "confirmed"
 PREVIEW_STATUS_EXPIRED = "expired"
 
 ACTION_CREATE_TASK = "create_task"
+ACTION_CLOSE_TASK = "close_task"
 
 
 DATE_FIELDS = {
@@ -37,8 +38,6 @@ DECIMAL_FIELDS = {
 def serialize_value(value):
     """
     Converts Python values to JSONB-safe values.
-
-    PostgreSQL JSONB does not accept date/datetime/Decimal directly.
     """
 
     if isinstance(value, (date, datetime)):
@@ -72,9 +71,9 @@ def deserialize_task_data(task_data: dict) -> dict:
     return result
 
 
-def build_proposed_changes(data: dict) -> list[dict]:
+def build_create_proposed_changes(data: dict) -> list[dict]:
     """
-    Builds list of proposed changes for preview response.
+    Builds proposed changes for create preview.
     For create action old_value is always None.
     """
 
@@ -87,6 +86,28 @@ def build_proposed_changes(data: dict) -> list[dict]:
                     "field": field,
                     "old_value": None,
                     "new_value": serialize_value(value),
+                }
+            )
+
+    return changes
+
+
+def build_update_proposed_changes(old_data: dict, new_data: dict) -> list[dict]:
+    """
+    Builds proposed changes for update-like preview.
+    """
+
+    changes = []
+
+    for field, new_value in new_data.items():
+        old_value = old_data.get(field)
+
+        if serialize_value(old_value) != serialize_value(new_value):
+            changes.append(
+                {
+                    "field": field,
+                    "old_value": serialize_value(old_value),
+                    "new_value": serialize_value(new_value),
                 }
             )
 
@@ -138,7 +159,6 @@ def create_task_preview(
 
     Important:
     this function does not write a task to tasks table.
-    It only prepares proposed changes for user confirmation.
     """
 
     task_type = get_task_type(db, request.task_type_id)
@@ -173,7 +193,7 @@ def create_task_preview(
     task_data["auto_status"] = auto_status
     task_data["auto_task_score"] = auto_task_score
 
-    proposed_changes = build_proposed_changes(task_data)
+    proposed_changes = build_create_proposed_changes(task_data)
 
     preview = TaskPreview(
         action=ACTION_CREATE_TASK,
@@ -199,12 +219,90 @@ def create_task_preview(
     return preview
 
 
+def create_close_task_preview(
+    db: Session,
+    task_id: int,
+    request: TaskClosePreviewRequest,
+) -> TaskPreview:
+    """
+    Creates preview for closing an existing task.
+
+    Important:
+    this function does not update task immediately.
+    """
+
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    warnings = []
+
+    if task.fact_finish_date is not None:
+        warnings.append("Task is already closed.")
+
+    fact_finish_date = request.fact_finish_date or date.today()
+
+    new_values = {
+        "fact_finish_date": fact_finish_date,
+        "auto_status": calculate_auto_status(
+            priority_id=task.priority_id,
+            complexity_id=task.complexity_id,
+            fact_start_date=task.fact_start_date,
+            fact_finish_date=fact_finish_date,
+        ),
+    }
+
+    if request.fact_hours is not None:
+        new_values["fact_hours"] = request.fact_hours
+
+    if request.short_status_description is not None:
+        new_values["short_status_description"] = request.short_status_description
+
+    old_values = {
+        "fact_finish_date": task.fact_finish_date,
+        "auto_status": task.auto_status,
+        "fact_hours": task.fact_hours,
+        "short_status_description": task.short_status_description,
+    }
+
+    proposed_changes = build_update_proposed_changes(
+        old_data=old_values,
+        new_data=new_values,
+    )
+
+    preview = TaskPreview(
+        action=ACTION_CLOSE_TASK,
+        raw_text=request.source_text,
+        ai_payload=None,
+        resolved_changes={
+            "task_id": task.id,
+            "task_data": {
+                key: serialize_value(value)
+                for key, value in new_values.items()
+            },
+            "proposed_changes": proposed_changes,
+        },
+        warnings=warnings,
+        target_task_id=task.id,
+        status=PREVIEW_STATUS_PENDING,
+        expires_at=datetime.now(UTC) + timedelta(hours=24),
+        created_by=request.created_by,
+    )
+
+    db.add(preview)
+    db.commit()
+    db.refresh(preview)
+
+    return preview
+
+
 def confirm_task_preview(
     db: Session,
     preview_id: int,
 ) -> Task:
     """
-    Confirms pending preview and writes task to database.
+    Confirms pending preview and writes changes to database.
     """
 
     preview = db.get(TaskPreview, preview_id)
@@ -218,18 +316,34 @@ def confirm_task_preview(
             detail=f"Preview is not pending. Current status: {preview.status}",
         )
 
+    if preview.warnings:
+        raise HTTPException(
+            status_code=400,
+            detail="Preview contains warnings and cannot be confirmed.",
+        )
+
     if preview.expires_at is not None and preview.expires_at < datetime.now(UTC):
         preview.status = PREVIEW_STATUS_EXPIRED
         db.commit()
 
         raise HTTPException(status_code=400, detail="Preview expired")
 
-    if preview.action != ACTION_CREATE_TASK:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported preview action: {preview.action}",
-        )
+    if preview.action == ACTION_CREATE_TASK:
+        return _confirm_create_task_preview(db=db, preview=preview)
 
+    if preview.action == ACTION_CLOSE_TASK:
+        return _confirm_close_task_preview(db=db, preview=preview)
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unsupported preview action: {preview.action}",
+    )
+
+
+def _confirm_create_task_preview(
+    db: Session,
+    preview: TaskPreview,
+) -> Task:
     if not preview.resolved_changes or "task_data" not in preview.resolved_changes:
         raise HTTPException(
             status_code=400,
@@ -273,6 +387,54 @@ def confirm_task_preview(
         created_by=task.created_by,
         source="preview",
     )
+
+    preview.status = PREVIEW_STATUS_CONFIRMED
+    preview.confirmed_at = datetime.now(UTC)
+    preview.target_task_id = task.id
+
+    db.commit()
+    db.refresh(task)
+
+    return task
+
+
+def _confirm_close_task_preview(
+    db: Session,
+    preview: TaskPreview,
+) -> Task:
+    if not preview.resolved_changes or "task_data" not in preview.resolved_changes:
+        raise HTTPException(
+            status_code=400,
+            detail="Preview does not contain task data.",
+        )
+
+    task_id = preview.target_task_id or preview.resolved_changes.get("task_id")
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task_data = deserialize_task_data(preview.resolved_changes["task_data"])
+
+    for field, new_value in task_data.items():
+        old_value = getattr(task, field)
+
+        if serialize_value(old_value) == serialize_value(new_value):
+            continue
+
+        setattr(task, field, new_value)
+
+        create_task_event(
+            db=db,
+            task_id=task.id,
+            event_type="closed" if field == "auto_status" else "updated",
+            field_name=field,
+            old_value={"value": serialize_value(old_value)},
+            new_value={"value": serialize_value(new_value)},
+            comment="Task updated from confirmed close preview.",
+            created_by=preview.created_by,
+            source="preview",
+        )
 
     preview.status = PREVIEW_STATUS_CONFIRMED
     preview.confirmed_at = datetime.now(UTC)

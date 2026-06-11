@@ -81,3 +81,10 @@ class ConfirmPreviewResponse(BaseModel):
     status: str
     task_id: int
     message: str
+
+class TaskClosePreviewRequest(BaseModel):
+    fact_finish_date: date | None = None
+    fact_hours: Decimal | None = None
+    short_status_description: str | None = None
+    source_text: str | None = None
+    created_by: str | None = None

@@ -8,12 +8,13 @@ from app.models.task_event import TaskEvent
 from app.schemas.task import (
     ConfirmPreviewRequest,
     ConfirmPreviewResponse,
+    TaskClosePreviewRequest,
     TaskCreatePreviewRequest,
     TaskDetailResponse,
     TaskListResponse,
     TaskPreviewResponse,
 )
-from app.services.preview_service import create_task_preview, confirm_task_preview
+from app.services.preview_service import create_task_preview, confirm_task_preview, create_close_task_preview
 from app.schemas.task_event import TaskEventResponse
 
 
@@ -63,7 +64,38 @@ def confirm_preview(
     return ConfirmPreviewResponse(
         status="confirmed",
         task_id=task.id,
-        message="Task created successfully.",
+        message="Preview confirmed successfully.",
+    )
+
+@router.post("/{task_id}/close", response_model=TaskPreviewResponse)
+def preview_close_task(
+    task_id: int,
+    request: TaskClosePreviewRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Creates preview for closing existing task.
+
+    This endpoint does not update task immediately.
+    It only prepares proposed changes for user confirmation.
+    """
+
+    preview = create_close_task_preview(
+        db=db,
+        task_id=task_id,
+        request=request,
+    )
+
+    resolved_changes = preview.resolved_changes or {}
+    proposed_changes = resolved_changes.get("proposed_changes", [])
+
+    return TaskPreviewResponse(
+        preview_id=preview.id,
+        action=preview.action,
+        target_task_id=preview.target_task_id,
+        proposed_changes=proposed_changes,
+        warnings=preview.warnings or [],
+        can_confirm=len(preview.warnings or []) == 0,
     )
 
 def build_task_list_response(task: Task) -> TaskListResponse:
