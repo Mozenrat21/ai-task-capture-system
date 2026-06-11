@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.routers.dicts import router as dicts_router
 from app.routers.health import router as health_router
+from app.routers.tasks import router as tasks_router
 
 
 
@@ -14,7 +15,7 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(dicts_router)
-
+app.include_router(tasks_router)
 @app.get("/")
 def root():
     """
