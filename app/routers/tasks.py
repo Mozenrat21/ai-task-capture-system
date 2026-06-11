@@ -5,7 +5,15 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.task import Task
 from app.models.task_event import TaskEvent
-from app.schemas.task import TaskDetailResponse, TaskListResponse
+from app.schemas.task import (
+    ConfirmPreviewRequest,
+    ConfirmPreviewResponse,
+    TaskCreatePreviewRequest,
+    TaskDetailResponse,
+    TaskListResponse,
+    TaskPreviewResponse,
+)
+from app.services.preview_service import create_task_preview, confirm_task_preview
 from app.schemas.task_event import TaskEventResponse
 
 
@@ -14,6 +22,49 @@ router = APIRouter(
     tags=["tasks"],
 )
 
+@router.post("/preview", response_model=TaskPreviewResponse)
+def preview_create_task(
+    request: TaskCreatePreviewRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Creates task preview.
+
+    This endpoint does not write task to tasks table.
+    It only prepares proposed changes for user confirmation.
+    """
+
+    preview = create_task_preview(db=db, request=request)
+
+    resolved_changes = preview.resolved_changes or {}
+    proposed_changes = resolved_changes.get("proposed_changes", [])
+
+    return TaskPreviewResponse(
+        preview_id=preview.id,
+        action=preview.action,
+        target_task_id=preview.target_task_id,
+        proposed_changes=proposed_changes,
+        warnings=preview.warnings or [],
+        can_confirm=len(preview.warnings or []) == 0,
+    )
+
+
+@router.post("/confirm", response_model=ConfirmPreviewResponse)
+def confirm_preview(
+    request: ConfirmPreviewRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Confirms pending preview and writes changes to database.
+    """
+
+    task = confirm_task_preview(db=db, preview_id=request.preview_id)
+
+    return ConfirmPreviewResponse(
+        status="confirmed",
+        task_id=task.id,
+        message="Task created successfully.",
+    )
 
 def build_task_list_response(task: Task) -> TaskListResponse:
     """
