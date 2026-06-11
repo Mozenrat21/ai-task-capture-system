@@ -1,0 +1,50 @@
+name: ai-task-capture-system
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-task-capture-system-backend:local
+    container_name: ai-task-capture-system-backend
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: "AI Task Capture System"
+      APP_ENV: "docker"
+      DATABASE_URL: "postgresql+psycopg://task_user:task_password@db:5432/task_capture_db"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:16-alpine
+    container_name: ai-task-capture-system-db
+    environment:
+      POSTGRES_DB: task_capture_db
+      POSTGRES_USER: task_user
+      POSTGRES_PASSWORD: task_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task_user -d task_capture_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:4
+    container_name: ai-task-capture-system-adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
