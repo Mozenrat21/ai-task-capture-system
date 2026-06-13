@@ -88,3 +88,8 @@ class TaskClosePreviewRequest(BaseModel):
     short_status_description: str | None = None
     source_text: str | None = None
     created_by: str | None = None
+
+class TaskStartPreviewRequest(BaseModel):
+    fact_start_date: date | None = None
+    source_text: str | None = None
+    created_by: str | None = None

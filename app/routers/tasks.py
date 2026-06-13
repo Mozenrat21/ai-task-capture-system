@@ -13,8 +13,14 @@ from app.schemas.task import (
     TaskDetailResponse,
     TaskListResponse,
     TaskPreviewResponse,
+    TaskStartPreviewRequest,
 )
-from app.services.preview_service import create_task_preview, confirm_task_preview, create_close_task_preview
+from app.services.preview_service import (
+    confirm_task_preview,
+    create_close_task_preview,
+    create_start_task_preview,
+    create_task_preview,
+)
 from app.schemas.task_event import TaskEventResponse
 
 
@@ -148,6 +154,36 @@ def build_task_detail_response(task: Task) -> TaskDetailResponse:
         is_deleted=task.is_deleted,
     )
 
+@router.post("/{task_id}/start", response_model=TaskPreviewResponse)
+def preview_start_task(
+    task_id: int,
+    request: TaskStartPreviewRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Creates preview for starting existing task.
+
+    This endpoint does not update task immediately.
+    It only prepares proposed changes for user confirmation.
+    """
+
+    preview = create_start_task_preview(
+        db=db,
+        task_id=task_id,
+        request=request,
+    )
+
+    resolved_changes = preview.resolved_changes or {}
+    proposed_changes = resolved_changes.get("proposed_changes", [])
+
+    return TaskPreviewResponse(
+        preview_id=preview.id,
+        action=preview.action,
+        target_task_id=preview.target_task_id,
+        proposed_changes=proposed_changes,
+        warnings=preview.warnings or [],
+        can_confirm=len(preview.warnings or []) == 0,
+    )
 
 @router.get("", response_model=list[TaskListResponse])
 def list_tasks(

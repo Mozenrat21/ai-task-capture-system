@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.dictionaries import ComplexityDict, PriorityDict, TaskTypeDict
 from app.models.task import Task
 from app.models.task_preview import TaskPreview
-from app.schemas.task import TaskClosePreviewRequest, TaskCreatePreviewRequest
+from app.schemas.task import TaskClosePreviewRequest, TaskCreatePreviewRequest, TaskStartPreviewRequest
 from app.services.event_service import create_task_event
 from app.services.score_service import calculate_auto_task_score
 from app.services.status_service import calculate_auto_status
@@ -20,6 +20,7 @@ PREVIEW_STATUS_EXPIRED = "expired"
 
 ACTION_CREATE_TASK = "create_task"
 ACTION_CLOSE_TASK = "close_task"
+ACTION_START_TASK = "start_task"
 
 
 DATE_FIELDS = {
@@ -296,6 +297,78 @@ def create_close_task_preview(
 
     return preview
 
+def create_start_task_preview(
+    db: Session,
+    task_id: int,
+    request: TaskStartPreviewRequest,
+) -> TaskPreview:
+    """
+    Creates preview for starting an existing task.
+
+    Important:
+    this function does not update task immediately.
+    It only prepares proposed changes for user confirmation.
+    """
+
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    warnings = []
+
+    if task.fact_finish_date is not None:
+        warnings.append("Task is already closed.")
+
+    if task.fact_start_date is not None:
+        warnings.append("Task already has fact start date.")
+
+    fact_start_date = request.fact_start_date or date.today()
+
+    new_values = {
+        "fact_start_date": fact_start_date,
+        "auto_status": calculate_auto_status(
+            priority_id=task.priority_id,
+            complexity_id=task.complexity_id,
+            fact_start_date=fact_start_date,
+            fact_finish_date=task.fact_finish_date,
+        ),
+    }
+
+    old_values = {
+        "fact_start_date": task.fact_start_date,
+        "auto_status": task.auto_status,
+    }
+
+    proposed_changes = build_update_proposed_changes(
+        old_data=old_values,
+        new_data=new_values,
+    )
+
+    preview = TaskPreview(
+        action=ACTION_START_TASK,
+        raw_text=request.source_text,
+        ai_payload=None,
+        resolved_changes={
+            "task_id": task.id,
+            "task_data": {
+                key: serialize_value(value)
+                for key, value in new_values.items()
+            },
+            "proposed_changes": proposed_changes,
+        },
+        warnings=warnings,
+        target_task_id=task.id,
+        status=PREVIEW_STATUS_PENDING,
+        expires_at=datetime.now(UTC) + timedelta(hours=24),
+        created_by=request.created_by,
+    )
+
+    db.add(preview)
+    db.commit()
+    db.refresh(preview)
+
+    return preview
 
 def confirm_task_preview(
     db: Session,
@@ -333,6 +406,9 @@ def confirm_task_preview(
 
     if preview.action == ACTION_CLOSE_TASK:
         return _confirm_close_task_preview(db=db, preview=preview)
+
+    if preview.action == ACTION_START_TASK:
+        return _confirm_start_task_preview(db=db, preview=preview)
 
     raise HTTPException(
         status_code=400,
@@ -432,6 +508,64 @@ def _confirm_close_task_preview(
             old_value={"value": serialize_value(old_value)},
             new_value={"value": serialize_value(new_value)},
             comment="Task updated from confirmed close preview.",
+            created_by=preview.created_by,
+            source="preview",
+        )
+
+    preview.status = PREVIEW_STATUS_CONFIRMED
+    preview.confirmed_at = datetime.now(UTC)
+    preview.target_task_id = task.id
+
+    db.commit()
+    db.refresh(task)
+
+    return task
+
+def _confirm_start_task_preview(
+    db: Session,
+    preview: TaskPreview,
+) -> Task:
+    """
+    Confirms start task preview and writes changes to database.
+    """
+
+    if not preview.resolved_changes or "task_data" not in preview.resolved_changes:
+        raise HTTPException(
+            status_code=400,
+            detail="Preview does not contain task data.",
+        )
+
+    task_id = preview.target_task_id or preview.resolved_changes.get("task_id")
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task_data = deserialize_task_data(preview.resolved_changes["task_data"])
+
+    for field, new_value in task_data.items():
+        old_value = getattr(task, field)
+
+        if serialize_value(old_value) == serialize_value(new_value):
+            continue
+
+        setattr(task, field, new_value)
+
+        if field == "fact_start_date":
+            event_type = "started"
+        elif field == "auto_status":
+            event_type = "status_changed"
+        else:
+            event_type = "updated"
+
+        create_task_event(
+            db=db,
+            task_id=task.id,
+            event_type=event_type,
+            field_name=field,
+            old_value={"value": serialize_value(old_value)},
+            new_value={"value": serialize_value(new_value)},
+            comment="Task updated from confirmed start preview.",
             created_by=preview.created_by,
             source="preview",
         )
