@@ -93,3 +93,9 @@ class TaskStartPreviewRequest(BaseModel):
     fact_start_date: date | None = None
     source_text: str | None = None
     created_by: str | None = None
+
+class TaskPlanPreviewRequest(BaseModel):
+    fact_start_date: date
+    planned_finish_date: date | None = None
+    source_text: str | None = None
+    created_by: str | None = None
