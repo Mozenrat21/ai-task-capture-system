@@ -104,3 +104,8 @@ class TaskPausePreviewRequest(BaseModel):
     pause_reason: str | None = None
     source_text: str | None = None
     created_by: str | None = None
+
+class TaskResumePreviewRequest(BaseModel):
+    resume_note: str | None = None
+    source_text: str | None = None
+    created_by: str | None = None

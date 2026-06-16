@@ -16,6 +16,7 @@ from app.schemas.task import (
     TaskPreviewResponse,
     TaskStartPreviewRequest,
     TaskPausePreviewRequest,
+    TaskResumePreviewRequest
 )
 from app.services.preview_service import (
     confirm_task_preview,
@@ -23,6 +24,7 @@ from app.services.preview_service import (
     create_plan_task_preview,
     create_start_task_preview,
     create_pause_task_preview,
+    create_resume_task_preview,
     create_task_preview,
 )
 from app.schemas.task_event import TaskEventResponse
@@ -234,6 +236,34 @@ def preview_pause_task(
     """
 
     preview = create_pause_task_preview(
+        db=db,
+        task_id=task_id,
+        request=request,
+    )
+
+    resolved_changes = preview.resolved_changes or {}
+    proposed_changes = resolved_changes.get("proposed_changes", [])
+
+    return TaskPreviewResponse(
+        preview_id=preview.id,
+        action=preview.action,
+        target_task_id=preview.target_task_id,
+        proposed_changes=proposed_changes,
+        warnings=preview.warnings or [],
+        can_confirm=len(preview.warnings or []) == 0,
+    )
+
+@router.post("/{task_id}/resume", response_model=TaskPreviewResponse)
+def preview_resume_task(
+    task_id: int,
+    request: TaskResumePreviewRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Creates preview for resuming paused task.
+    """
+
+    preview = create_resume_task_preview(
         db=db,
         task_id=task_id,
         request=request,
