@@ -99,3 +99,8 @@ class TaskPlanPreviewRequest(BaseModel):
     planned_finish_date: date | None = None
     source_text: str | None = None
     created_by: str | None = None
+
+class TaskPausePreviewRequest(BaseModel):
+    pause_reason: str | None = None
+    source_text: str | None = None
+    created_by: str | None = None

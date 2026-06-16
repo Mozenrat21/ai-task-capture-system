@@ -13,6 +13,7 @@ from app.schemas.task import (
     TaskCreatePreviewRequest,
     TaskPlanPreviewRequest,
     TaskStartPreviewRequest,
+    TaskPausePreviewRequest,
 )
 from app.services.event_service import create_task_event
 from app.services.score_service import calculate_auto_task_score
@@ -27,7 +28,7 @@ ACTION_CREATE_TASK = "create_task"
 ACTION_CLOSE_TASK = "close_task"
 ACTION_START_TASK = "start_task"
 ACTION_PLAN_TASK = "plan_task"
-
+ACTION_PAUSE_TASK = "pause_task"
 
 DATE_FIELDS = {
     "planned_finish_date",
@@ -451,6 +452,76 @@ def create_plan_task_preview(
 
     return preview
 
+def create_pause_task_preview(
+    db: Session,
+    task_id: int,
+    request: TaskPausePreviewRequest,
+) -> TaskPreview:
+    """
+    Creates preview for pausing an existing task.
+
+    This function does not update task immediately.
+    It only prepares proposed changes for user confirmation.
+    """
+
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    warnings = []
+
+    if task.fact_finish_date is not None:
+        warnings.append("Task is already closed.")
+
+    if task.fact_start_date is None:
+        warnings.append("Task has not been started yet.")
+
+    if task.auto_status == "Пауза":
+        warnings.append("Task is already paused.")
+
+    pause_description = request.pause_reason or "Поставлено на паузу."
+
+    new_values = {
+        "auto_status": "Пауза",
+        "short_status_description": pause_description,
+    }
+
+    old_values = {
+        "auto_status": task.auto_status,
+        "short_status_description": task.short_status_description,
+    }
+
+    proposed_changes = build_update_proposed_changes(
+        old_data=old_values,
+        new_data=new_values,
+    )
+
+    preview = TaskPreview(
+        action=ACTION_PAUSE_TASK,
+        raw_text=request.source_text,
+        ai_payload=None,
+        resolved_changes={
+            "task_id": task.id,
+            "task_data": {
+                key: serialize_value(value)
+                for key, value in new_values.items()
+            },
+            "proposed_changes": proposed_changes,
+        },
+        warnings=warnings,
+        target_task_id=task.id,
+        status=PREVIEW_STATUS_PENDING,
+        expires_at=datetime.now(UTC) + timedelta(hours=24),
+        created_by=request.created_by,
+    )
+
+    db.add(preview)
+    db.commit()
+    db.refresh(preview)
+
+    return preview
+
 def confirm_task_preview(
     db: Session,
     preview_id: int,
@@ -493,6 +564,9 @@ def confirm_task_preview(
     
     if preview.action == ACTION_PLAN_TASK:
         return _confirm_plan_task_preview(db=db, preview=preview)
+    
+    if preview.action == ACTION_PAUSE_TASK:
+        return _confirm_pause_task_preview(db=db, preview=preview)
 
     raise HTTPException(
         status_code=400,
@@ -710,6 +784,62 @@ def _confirm_plan_task_preview(
             old_value={"value": serialize_value(old_value)},
             new_value={"value": serialize_value(new_value)},
             comment="Task updated from confirmed plan preview.",
+            created_by=preview.created_by,
+            source="preview",
+        )
+
+    preview.status = PREVIEW_STATUS_CONFIRMED
+    preview.confirmed_at = datetime.now(UTC)
+    preview.target_task_id = task.id
+
+    db.commit()
+    db.refresh(task)
+
+    return task
+
+def _confirm_pause_task_preview(
+    db: Session,
+    preview: TaskPreview,
+) -> Task:
+    """
+    Confirms pause task preview and writes changes to database.
+    """
+
+    if not preview.resolved_changes or "task_data" not in preview.resolved_changes:
+        raise HTTPException(
+            status_code=400,
+            detail="Preview does not contain task data.",
+        )
+
+    task_id = preview.target_task_id or preview.resolved_changes.get("task_id")
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task_data = deserialize_task_data(preview.resolved_changes["task_data"])
+
+    for field, new_value in task_data.items():
+        old_value = getattr(task, field)
+
+        if serialize_value(old_value) == serialize_value(new_value):
+            continue
+
+        setattr(task, field, new_value)
+
+        if field == "auto_status":
+            event_type = "paused"
+        else:
+            event_type = "updated"
+
+        create_task_event(
+            db=db,
+            task_id=task.id,
+            event_type=event_type,
+            field_name=field,
+            old_value={"value": serialize_value(old_value)},
+            new_value={"value": serialize_value(new_value)},
+            comment="Task updated from confirmed pause preview.",
             created_by=preview.created_by,
             source="preview",
         )

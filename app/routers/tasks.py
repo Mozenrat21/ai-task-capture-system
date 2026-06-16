@@ -15,12 +15,14 @@ from app.schemas.task import (
     TaskPlanPreviewRequest,
     TaskPreviewResponse,
     TaskStartPreviewRequest,
+    TaskPausePreviewRequest,
 )
 from app.services.preview_service import (
     confirm_task_preview,
     create_close_task_preview,
     create_plan_task_preview,
     create_start_task_preview,
+    create_pause_task_preview,
     create_task_preview,
 )
 from app.schemas.task_event import TaskEventResponse
@@ -201,6 +203,37 @@ def preview_plan_task(
     """
 
     preview = create_plan_task_preview(
+        db=db,
+        task_id=task_id,
+        request=request,
+    )
+
+    resolved_changes = preview.resolved_changes or {}
+    proposed_changes = resolved_changes.get("proposed_changes", [])
+
+    return TaskPreviewResponse(
+        preview_id=preview.id,
+        action=preview.action,
+        target_task_id=preview.target_task_id,
+        proposed_changes=proposed_changes,
+        warnings=preview.warnings or [],
+        can_confirm=len(preview.warnings or []) == 0,
+    )
+
+@router.post("/{task_id}/pause", response_model=TaskPreviewResponse)
+def preview_pause_task(
+    task_id: int,
+    request: TaskPausePreviewRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Creates preview for pausing existing task.
+
+    This endpoint does not update task immediately.
+    It only prepares proposed changes for user confirmation.
+    """
+
+    preview = create_pause_task_preview(
         db=db,
         task_id=task_id,
         request=request,
