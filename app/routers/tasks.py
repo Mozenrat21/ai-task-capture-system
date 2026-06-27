@@ -50,8 +50,12 @@ def preview_create_task_from_voice_transcript(
     """
     Creates task preview from voice transcript.
 
-    MVP scope:
-    voice command -> speech-to-text transcript -> mock AI parser -> preview.
+    Flow:
+    voice transcript -> AI parser provider -> structured task payload -> preview.
+
+    Provider depends on AI_PROVIDER:
+    - mock: offline deterministic parser
+    - openai: real LLM structured extraction
 
     This endpoint does not process audio files directly.
     It accepts already recognized transcript text.
@@ -73,6 +77,7 @@ def preview_create_task_from_voice_transcript(
         executor=parsed_task.executor,
         planned_finish_date=parsed_task.planned_finish_date,
         source_text=parsed_task.source_text,
+        ai_confidence=parsed_task.ai_confidence,
         created_by=parsed_task.created_by,
     )
 
@@ -102,7 +107,11 @@ def preview_create_task_from_ai_text(
     Creates task preview from raw Ukrainian text.
 
     Flow:
-    raw_text -> mock AI parser -> structured task payload -> preview.
+    raw_text -> AI parser provider -> structured task payload -> preview.
+
+    Provider depends on AI_PROVIDER:
+    - mock: offline deterministic parser
+    - openai: real LLM structured extraction
     """
 
     parsed_task = parse_task_text(
