@@ -7,6 +7,11 @@ class AIParseTaskRequest(BaseModel):
     raw_text: str = Field(min_length=3)
     created_by: str | None = None
 
+class AIVoiceTranscriptPreviewRequest(BaseModel):
+    transcript: str = Field(min_length=3)
+    created_by: str | None = None
+    language: str = "uk-UA"
+    speech_confidence: float | None = Field(default=None, ge=0, le=1)
 
 class AIParsedTaskPayload(BaseModel):
     task_title: str
