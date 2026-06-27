@@ -15,6 +15,7 @@ from app.schemas.task import (
     TaskStartPreviewRequest,
     TaskPausePreviewRequest,
     TaskResumePreviewRequest,
+    TaskUpdatePreviewRequest,
 )
 from app.services.event_service import create_task_event
 from app.services.score_service import calculate_auto_task_score
@@ -31,6 +32,7 @@ ACTION_START_TASK = "start_task"
 ACTION_PLAN_TASK = "plan_task"
 ACTION_PAUSE_TASK = "pause_task"
 ACTION_RESUME_TASK = "resume_task"
+ACTION_UPDATE_TASK = "update_task"
 
 DATE_FIELDS = {
     "planned_finish_date",
@@ -524,6 +526,157 @@ def create_pause_task_preview(
 
     return preview
 
+def create_update_task_preview(
+    db: Session,
+    task_id: int,
+    request: TaskUpdatePreviewRequest,
+) -> TaskPreview:
+    """
+    Creates preview for updating an existing task.
+
+    This function updates only fields explicitly sent by user.
+    It does not write changes to task immediately.
+    """
+
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    allowed_update_fields = {
+        "task_title",
+        "goal",
+        "task_type_id",
+        "business_area",
+        "customer",
+        "priority_id",
+        "complexity_id",
+        "executor",
+        "extra_column",
+        "plan_fact",
+        "planned_finish_date",
+        "short_status_description",
+    }
+
+    sent_fields = request.model_fields_set
+    fields_to_update = allowed_update_fields.intersection(sent_fields)
+
+    if not fields_to_update:
+        warnings = ["No task fields were provided for update."]
+
+        preview = TaskPreview(
+            action=ACTION_UPDATE_TASK,
+            raw_text=request.source_text,
+            ai_payload=None,
+            resolved_changes={
+                "task_id": task.id,
+                "task_data": {},
+                "proposed_changes": [],
+            },
+            warnings=warnings,
+            target_task_id=task.id,
+            status=PREVIEW_STATUS_PENDING,
+            expires_at=datetime.now(UTC) + timedelta(hours=24),
+            created_by=request.created_by,
+        )
+
+        db.add(preview)
+        db.commit()
+        db.refresh(preview)
+
+        return preview
+
+    new_values = {}
+
+    for field in fields_to_update:
+        new_values[field] = getattr(request, field)
+
+    final_task_type_id = new_values.get("task_type_id", task.task_type_id)
+    final_priority_id = new_values.get("priority_id", task.priority_id)
+    final_complexity_id = new_values.get("complexity_id", task.complexity_id)
+
+    task_type = None
+    priority = None
+    complexity = None
+
+    if final_task_type_id is not None:
+        task_type = db.get(TaskTypeDict, final_task_type_id)
+        if task_type is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Task type with id={final_task_type_id} not found.",
+            )
+
+    if final_priority_id is not None:
+        priority = db.get(PriorityDict, final_priority_id)
+        if priority is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Priority with id={final_priority_id} not found.",
+            )
+
+    if final_complexity_id is not None:
+        complexity = db.get(ComplexityDict, final_complexity_id)
+        if complexity is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Complexity with id={final_complexity_id} not found.",
+            )
+
+    if {"task_type_id", "priority_id", "complexity_id"} & fields_to_update:
+        if task_type is not None and priority is not None and complexity is not None:
+            new_values["auto_task_score"] = calculate_auto_task_score(
+                task_type_base_hours=task_type.base_hours,
+                priority_coefficient=priority.coefficient,
+                complexity_coefficient=complexity.coefficient,
+            )
+        else:
+            new_values["auto_task_score"] = None
+
+    if {"priority_id", "complexity_id"} & fields_to_update:
+        if task.auto_status not in {"Пауза", "Скасовано"}:
+            new_values["auto_status"] = calculate_auto_status(
+                priority_id=final_priority_id,
+                complexity_id=final_complexity_id,
+                fact_start_date=task.fact_start_date,
+                fact_finish_date=task.fact_finish_date,
+            )
+
+    old_values = {
+        field: getattr(task, field)
+        for field in new_values.keys()
+    }
+
+    proposed_changes = build_update_proposed_changes(
+        old_data=old_values,
+        new_data=new_values,
+    )
+
+    preview = TaskPreview(
+        action=ACTION_UPDATE_TASK,
+        raw_text=request.source_text,
+        ai_payload=None,
+        resolved_changes={
+            "task_id": task.id,
+            "task_data": {
+                key: serialize_value(value)
+                for key, value in new_values.items()
+            },
+            "proposed_changes": proposed_changes,
+        },
+        warnings=[],
+        target_task_id=task.id,
+        status=PREVIEW_STATUS_PENDING,
+        expires_at=datetime.now(UTC) + timedelta(hours=24),
+        created_by=request.created_by,
+    )
+
+    db.add(preview)
+    db.commit()
+    db.refresh(preview)
+
+    return preview
+
 def confirm_task_preview(
     db: Session,
     preview_id: int,
@@ -572,6 +725,9 @@ def confirm_task_preview(
 
     if preview.action == ACTION_RESUME_TASK:
         return _confirm_resume_task_preview(db=db, preview=preview)
+    
+    if preview.action == ACTION_UPDATE_TASK:
+        return _confirm_update_task_preview(db=db, preview=preview)
 
     raise HTTPException(
         status_code=400,
@@ -967,6 +1123,68 @@ def _confirm_resume_task_preview(
             old_value={"value": serialize_value(old_value)},
             new_value={"value": serialize_value(new_value)},
             comment="Task updated from confirmed resume preview.",
+            created_by=preview.created_by,
+            source="preview",
+        )
+
+    preview.status = PREVIEW_STATUS_CONFIRMED
+    preview.confirmed_at = datetime.now(UTC)
+    preview.target_task_id = task.id
+
+    db.commit()
+    db.refresh(task)
+
+    return task
+
+def _confirm_update_task_preview(
+    db: Session,
+    preview: TaskPreview,
+) -> Task:
+    """
+    Confirms update task preview and writes changes to database.
+    """
+
+    if not preview.resolved_changes or "task_data" not in preview.resolved_changes:
+        raise HTTPException(
+            status_code=400,
+            detail="Preview does not contain task data.",
+        )
+
+    task_id = preview.target_task_id or preview.resolved_changes.get("task_id")
+    task = db.get(Task, task_id)
+
+    if task is None or task.is_deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task_data = deserialize_task_data(preview.resolved_changes["task_data"])
+
+    for field, new_value in task_data.items():
+        old_value = getattr(task, field)
+
+        if serialize_value(old_value) == serialize_value(new_value):
+            continue
+
+        setattr(task, field, new_value)
+
+        if field == "auto_status":
+            event_type = "status_changed"
+        elif field == "auto_task_score":
+            event_type = "score_changed"
+        elif field == "planned_finish_date":
+            event_type = "deadline_changed"
+        elif field in {"task_type_id", "priority_id", "complexity_id"}:
+            event_type = "classification_changed"
+        else:
+            event_type = "updated"
+
+        create_task_event(
+            db=db,
+            task_id=task.id,
+            event_type=event_type,
+            field_name=field,
+            old_value={"value": serialize_value(old_value)},
+            new_value={"value": serialize_value(new_value)},
+            comment="Task updated from confirmed update preview.",
             created_by=preview.created_by,
             source="preview",
         )

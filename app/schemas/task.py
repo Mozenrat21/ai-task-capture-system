@@ -109,3 +109,19 @@ class TaskResumePreviewRequest(BaseModel):
     resume_note: str | None = None
     source_text: str | None = None
     created_by: str | None = None
+
+class TaskUpdatePreviewRequest(BaseModel):
+    task_title: str | None = None
+    goal: str | None = None
+    task_type_id: int | None = None
+    business_area: str | None = None
+    customer: str | None = None
+    priority_id: int | None = None
+    complexity_id: int | None = None
+    executor: str | None = None
+    extra_column: str | None = None
+    plan_fact: str | None = None
+    planned_finish_date: date | None = None
+    short_status_description: str | None = None
+    source_text: str | None = None
+    created_by: str | None = None

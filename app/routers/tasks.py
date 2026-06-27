@@ -16,7 +16,8 @@ from app.schemas.task import (
     TaskPreviewResponse,
     TaskStartPreviewRequest,
     TaskPausePreviewRequest,
-    TaskResumePreviewRequest
+    TaskResumePreviewRequest,
+    TaskUpdatePreviewRequest
 )
 from app.services.preview_service import (
     confirm_task_preview,
@@ -25,6 +26,7 @@ from app.services.preview_service import (
     create_start_task_preview,
     create_pause_task_preview,
     create_resume_task_preview,
+    create_update_task_preview,
     create_task_preview,
 )
 from app.schemas.task_event import TaskEventResponse
@@ -264,6 +266,37 @@ def preview_resume_task(
     """
 
     preview = create_resume_task_preview(
+        db=db,
+        task_id=task_id,
+        request=request,
+    )
+
+    resolved_changes = preview.resolved_changes or {}
+    proposed_changes = resolved_changes.get("proposed_changes", [])
+
+    return TaskPreviewResponse(
+        preview_id=preview.id,
+        action=preview.action,
+        target_task_id=preview.target_task_id,
+        proposed_changes=proposed_changes,
+        warnings=preview.warnings or [],
+        can_confirm=len(preview.warnings or []) == 0,
+    )
+
+@router.post("/{task_id}/update", response_model=TaskPreviewResponse)
+def preview_update_task(
+    task_id: int,
+    request: TaskUpdatePreviewRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Creates preview for updating existing task.
+
+    This endpoint does not update task immediately.
+    It only prepares proposed changes for user confirmation.
+    """
+
+    preview = create_update_task_preview(
         db=db,
         task_id=task_id,
         request=request,
