@@ -34,12 +34,12 @@ Backend формує preview.
 
 ---
 
-## 2. Матеріали для здачі в LMS
+## 2. Документація та швидкий старт
 
 Основні файли для перевірки:
 
 * `README.md` — основна інструкція по проєкту, запуску, API та перевірці працездатності.
-* `docs/COURSE_SUBMISSION.md` — повний опис MVP, відповідність критеріям LMS, основний сценарій роботи, обмеження та розвиток.
+* `docs/PROJECT_OVERVIEW.md` — розширений опис MVP, архітектури, сценаріїв роботи, обмежень і подальшого розвитку.
 * `docs/RESEARCH_AND_CONCEPT.md` — дослідження проблеми, концепція, обґрунтування стеку та AI/voice-ready scope.
 
 Основний сценарій роботи MVP:
@@ -64,7 +64,7 @@ GET /tasks/{task_id}
 GET /tasks/{task_id}/events
 ```
 
-Швидка перевірка перед здачею:
+Швидка перевірка працездатності:
 
 ```powershell
 docker compose up -d --build
@@ -142,7 +142,7 @@ AI Task Capture System вирішує цю проблему через конт�
 * optional OpenAI LLM parser;
 * mock fallback parser для запуску без ключа;
 * тести;
-* українська документація для здачі.
+* українська технічна документація.
 
 ---
 
@@ -162,7 +162,7 @@ AI_PROVIDER=openai
 Цей режим потрібен для:
 
 * локального запуску без зовнішніх API ключів;
-* стабільної перевірки в LMS;
+* стабільної локальної перевірки;
 * повторюваних тестів;
 * fallback-сценарію, якщо LLM provider недоступний.
 
@@ -371,7 +371,7 @@ AI Task Capture System/
 │   │   └── status_service.py
 │   └── utils/
 ├── docs/
-│   ├── COURSE_SUBMISSION.md
+│   ├── PROJECT_OVERVIEW.md
 │   └── RESEARCH_AND_CONCEPT.md
 ├── migrations/
 ├── scripts/
@@ -806,46 +806,20 @@ GET /tasks/{task_id}/events
 
 ---
 
-## 22. Відповідність критеріям LMS
+## 22. Інженерні рішення
 
-### Дослідження та концепція
+Проєкт демонструє такі інженерні підходи:
 
-| Критерій             | Як закрито                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| Обґрунтування теми   | Проєкт вирішує проблему хаотичної фіксації задач із тексту, голосових команд і повідомлень       |
-| Аналіз проблеми      | Описано проблему неструктурованого input і ризики AI-помилок                                     |
-| Вибір стеку          | Обґрунтовано FastAPI, PostgreSQL, SQLAlchemy, Alembic, Docker, Pytest, OpenAI provider           |
-| Очікуваний результат | Описано backend MVP з text / voice transcript input, AI provider, preview, confirm і audit trail |
-
-### Документація
-
-| Критерій            | Як закрито                                                                   |
-| ------------------- | ---------------------------------------------------------------------------- |
-| Чіткий опис проєкту | Є в README і `docs/COURSE_SUBMISSION.md`                                     |
-| Архітектурна логіка | Описано routers, schemas, services, models, DB, AI provider, preview/confirm |
-| Інструкція запуску  | Є Docker Compose, health check, Swagger, Adminer                             |
-| Залежності          | Описано технологічний стек                                                   |
-| Сценарій перевірки  | Описано text preview, voice preview, confirm, task details, events           |
-
-### Працездатність MVP
-
-| Критерій                  | Як закрито                                              |
-| ------------------------- | ------------------------------------------------------- |
-| Проєкт запускається       | Docker Compose піднімає backend, PostgreSQL, Adminer    |
-| Health check працює       | `/health` повертає `status = ok`, `database = ok`       |
-| Основні сценарії працюють | ai-preview, voice-preview, confirm, lifecycle workflows |
-| Тести проходять           | `19 passed`                                             |
-
-### Якість коду та архітектура
-
-| Критерій                     | Як закрито                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| Логічна структура директорій | `app/routers`, `app/schemas`, `app/services`, `app/models`, `tests`, `docs` |
-| Clean Code                   | Бізнес-логіка винесена в services                                           |
-| AI provider layer            | Є mock fallback і optional OpenAI provider                                  |
-| Немає прямого AI write в DB  | Використано `preview → confirm`                                             |
-| Є audit trail                | Зміни пишуться в `task_events`                                              |
-| Доречні інструменти          | FastAPI, PostgreSQL, Alembic, SQLAlchemy, Docker, Pytest, OpenAI API        |
+| Напрям | Реалізація |
+|---|---|
+| AI parser layer | Provider-based підхід із `mock` fallback та optional `openai` provider |
+| Human-in-the-loop | AI output не записується напряму, а проходить через `preview → confirm` |
+| Backend validation | Pydantic schemas і service layer формують контрольований payload |
+| Persistence | Дані задач зберігаються у PostgreSQL |
+| Audit trail | Підтверджені зміни записуються в `task_events` |
+| Runtime | Локальний запуск через Docker Compose |
+| Reliability | Критична бізнес-логіка покрита тестами |
+| Extensibility | Voice transcript, OpenAI provider, lifecycle workflows і roadmap для розвитку |
 
 ---
 
