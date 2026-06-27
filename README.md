@@ -893,67 +893,64 @@ GET /tasks/{task_id}/events
 
 ---
 
-## 25. Версія для здачі
+## 25. Версія проєкту
 
-Робоча гілка:
-
-```text
-dev
-```
-
-Фінальний тег для здачі:
+Поточна стабільна версія MVP позначена тегом:
 
 ```text
 v0.1-course-mvp
 ```
 
-Після фінальних змін тег має стояти на останньому коміті.
-
-Перевірка:
-
-```powershell
-git log --oneline --decorate -5
-```
-
-Очікувано:
+Основна робоча гілка:
 
 ```text
-HEAD -> dev, tag: v0.1-course-mvp
+dev
+```
+
+Цей тег фіксує версію, яка містить базовий AI Engineering workflow:
+
+```text
+text input / voice transcript
+→ AI parser provider
+→ structured payload
+→ preview
+→ confirm
+→ PostgreSQL
+→ task_events
 ```
 
 ---
 
-## 26. Поточний статус
+## 26. Поточний стан реалізації
+
+У поточній версії реалізовано:
 
 ```text
-MVP реалізовано.
 Backend запускається через Docker Compose.
-PostgreSQL працює.
-Health check працює.
-AI text preview працює.
-Voice transcript preview працює.
-Optional OpenAI parser provider реалізовано.
-Mock fallback працює без API ключа.
-Preview/confirm workflow працює.
-Task lifecycle workflows реалізовано.
+PostgreSQL використовується як основне сховище.
+Health check перевіряє доступність backend і database.
+AI text preview працює через provider-based parser.
+Voice transcript preview працює через той самий AI workflow.
+OpenAI parser доступний як optional provider.
+Mock parser доступний як fallback без API ключа.
+Preview/confirm workflow відокремлює AI output від запису в БД.
+Task lifecycle workflows реалізовано для start, plan, pause, resume, update і close.
 Audit trail реалізовано через task_events.
-Тести проходять.
-Документація для LMS підготовлена.
-```
-
-Рівень готовності:
-
-```text
-Проєкт готовий до здачі як course MVP.
+Автоматичний статус і автоматична оцінка задачі розраховуються backend-ом.
+Тести покривають критичну бізнес-логіку.
 ```
 
 ---
 
-## 27. Ключова фраза
+## 27. Ключовий архітектурний принцип
 
 ```text
-У цьому MVP AI не приймає остаточне рішення і не пише напряму в базу.
-AI допомагає перетворити текст або transcript голосової команди у structured payload.
-Backend формує preview, користувач підтверджує зміни, і тільки після цього задача записується в PostgreSQL.
-Для стабільної перевірки використовується mock provider, а для реальної AI-обробки доступний optional OpenAI provider.
+AI не приймає остаточне рішення і не пише напряму в базу.
+
+AI parser допомагає перетворити неструктурований текст або transcript голосової команди у structured payload.
+
+Backend валідовує дані, формує preview, очікує підтвердження користувача і тільки після цього записує задачу в PostgreSQL.
+
+Для стабільної локальної перевірки використовується mock provider.
+Для реальної AI-обробки доступний optional OpenAI provider.
 ```
