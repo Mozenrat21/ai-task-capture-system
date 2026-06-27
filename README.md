@@ -40,7 +40,7 @@ Backend формує preview.
 
 * `README.md` — основна інструкція по проєкту, запуску, API та перевірці працездатності.
 * `docs/COURSE_SUBMISSION.md` — повний опис MVP, відповідність критеріям LMS, основний сценарій роботи, обмеження та розвиток.
-* `docs/RESEARCH_AND_CONCEPT.md` — дослідження проблеми, концепція, обґрунтування стеку та voice-ready scope.
+* `docs/RESEARCH_AND_CONCEPT.md` — дослідження проблеми, концепція, обґрунтування стеку та AI/voice-ready scope.
 
 Основний сценарій роботи MVP:
 
@@ -138,13 +138,83 @@ AI Task Capture System вирішує цю проблему через конт�
 * автоматичний розрахунок статусу задачі;
 * автоматична оцінка задачі;
 * історія змін у `task_events`;
-* mock AI parser;
+* provider-based AI parser;
+* optional OpenAI LLM parser;
+* mock fallback parser для запуску без ключа;
 * тести;
 * українська документація для здачі.
 
 ---
 
-## 5. Voice-ready MVP scope
+## 5. AI provider modes
+
+Проєкт підтримує два режими AI parser:
+
+```text
+AI_PROVIDER=mock
+AI_PROVIDER=openai
+```
+
+### Mock provider
+
+`AI_PROVIDER=mock` використовується за замовчуванням.
+
+Цей режим потрібен для:
+
+* локального запуску без зовнішніх API ключів;
+* стабільної перевірки в LMS;
+* повторюваних тестів;
+* fallback-сценарію, якщо LLM provider недоступний.
+
+У цьому режимі використовується deterministic parser на Python.
+
+### OpenAI provider
+
+`AI_PROVIDER=openai` використовується для реальної AI-обробки сирого тексту або transcript голосової команди.
+
+У цьому режимі workflow виглядає так:
+
+```text
+raw text / voice transcript
+→ OpenAI LLM
+→ structured JSON
+→ Pydantic validation
+→ preview
+→ confirm
+→ PostgreSQL
+```
+
+Цей режим дозволяє обробляти неакуратний, сирий або голосовий текст і формувати:
+
+* коротку професійну назву задачі;
+* ціль задачі;
+* тип задачі;
+* бізнес-напрям;
+* замовника;
+* пріоритет;
+* складність;
+* планову дату;
+* confidence score.
+
+Для використання OpenAI provider потрібно локально створити `.env` і додати:
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+```
+
+Файл `.env` не потрібно комітити в Git.
+
+Для перевірки без API ключа достатньо залишити режим за замовчуванням:
+
+```env
+AI_PROVIDER=mock
+```
+
+---
+
+## 6. Voice-ready MVP scope
 
 Початкова ідея проєкту включає не тільки текстове введення, а й голосове управління задачами.
 
@@ -182,7 +252,7 @@ POST /tasks/voice-preview
 
 ---
 
-## 6. Архітектура MVP
+## 7. Архітектура MVP
 
 Поточна архітектура:
 
@@ -194,6 +264,8 @@ FastAPI Router
 Pydantic Schemas
         ↓
 Service Layer
+        ↓
+AI Parser Provider
         ↓
 Business Rules
         ↓
@@ -211,9 +283,11 @@ AI workflow:
 ```text
 raw text / voice transcript
         ↓
-mock AI parser
+mock parser або OpenAI LLM parser
         ↓
 structured payload
+        ↓
+Pydantic validation
         ↓
 TaskCreatePreviewRequest
         ↓
@@ -236,34 +310,37 @@ Docker Compose піднімає такі сервіси:
 
 ---
 
-## 7. Технології
+## 8. Технології
 
-| Компонент   | Технологія             |
-| ----------- | ---------------------- |
-| Backend     | Python 3.12, FastAPI   |
-| Database    | PostgreSQL             |
-| ORM         | SQLAlchemy             |
-| Migrations  | Alembic                |
-| Validation  | Pydantic               |
-| Tests       | Pytest                 |
-| Containers  | Docker, Docker Compose |
-| DB Admin UI | Adminer                |
+| Компонент   | Технологія                 |
+| ----------- | -------------------------- |
+| Backend     | Python 3.12, FastAPI       |
+| Database    | PostgreSQL                 |
+| ORM         | SQLAlchemy                 |
+| Migrations  | Alembic                    |
+| Validation  | Pydantic                   |
+| AI provider | OpenAI API / mock fallback |
+| Tests       | Pytest                     |
+| Containers  | Docker, Docker Compose     |
+| DB Admin UI | Adminer                    |
 
 Чому обрано саме цей стек:
 
-| Технологія     | Причина                                                       |
-| -------------- | ------------------------------------------------------------- |
-| FastAPI        | Швидка розробка API, Swagger UI, зручна інтеграція з Pydantic |
-| PostgreSQL     | Надійне structured data сховище                               |
-| SQLAlchemy     | ORM для моделей і роботи з БД                                 |
-| Alembic        | Контрольовані міграції                                        |
-| Docker Compose | Відтворюваний локальний запуск                                |
-| Pytest         | Перевірка критичної бізнес-логіки                             |
-| Adminer        | Простий перегляд PostgreSQL                                   |
+| Технологія      | Причина                                                          |
+| --------------- | ---------------------------------------------------------------- |
+| FastAPI         | Швидка розробка API, Swagger UI, зручна інтеграція з Pydantic    |
+| PostgreSQL      | Надійне structured data сховище                                  |
+| SQLAlchemy      | ORM для моделей і роботи з БД                                    |
+| Alembic         | Контрольовані міграції                                           |
+| OpenAI provider | Реальна AI-обробка неструктурованого тексту в structured payload |
+| Mock provider   | Стабільний fallback для тестів і запуску без API ключа           |
+| Docker Compose  | Відтворюваний локальний запуск                                   |
+| Pytest          | Перевірка критичної бізнес-логіки                                |
+| Adminer         | Простий перегляд PostgreSQL                                      |
 
 ---
 
-## 8. Структура проєкту
+## 9. Структура проєкту
 
 ```text
 AI Task Capture System/
@@ -313,15 +390,15 @@ AI Task Capture System/
 
 ---
 
-## 9. Запуск через Docker Compose
+## 10. Запуск через Docker Compose
 
-### 9.1. Запустити сервіси
+### 10.1. Запустити сервіси
 
 ```powershell
 docker compose up -d --build
 ```
 
-### 9.2. Перевірити статус контейнерів
+### 10.2. Перевірити статус контейнерів
 
 ```powershell
 docker compose ps
@@ -335,7 +412,7 @@ ai-task-capture-system-db
 ai-task-capture-system-adminer
 ```
 
-### 9.3. Health check
+### 10.3. Health check
 
 ```powershell
 Invoke-RestMethod http://localhost:8000/health
@@ -348,19 +425,19 @@ status = ok
 database = ok
 ```
 
-### 9.4. Переглянути логи backend
+### 10.4. Переглянути логи backend
 
 ```powershell
 docker compose logs -f backend
 ```
 
-### 9.5. Зупинити сервіси
+### 10.5. Зупинити сервіси
 
 ```powershell
 docker compose down
 ```
 
-### 9.6. Зупинити сервіси і видалити дані PostgreSQL
+### 10.6. Зупинити сервіси і видалити дані PostgreSQL
 
 ```powershell
 docker compose down -v
@@ -370,7 +447,7 @@ docker compose down -v
 
 ---
 
-## 10. Корисні URL
+## 11. Корисні URL
 
 | Що           | URL                          |
 | ------------ | ---------------------------- |
@@ -381,7 +458,7 @@ docker compose down -v
 
 ---
 
-## 11. Підключення до Adminer
+## 12. Підключення до Adminer
 
 Відкрити:
 
@@ -401,31 +478,19 @@ http://localhost:8080
 
 ---
 
-## 12. Міграції бази даних
+## 13. Міграції бази даних
 
 Проєкт використовує Alembic.
 
-### 12.1. Застосувати всі міграції
-
 ```powershell
 python -m alembic upgrade head
-```
-
-### 12.2. Перевірити поточну міграцію
-
-```powershell
 python -m alembic current
-```
-
-### 12.3. Переглянути історію міграцій
-
-```powershell
 python -m alembic history
 ```
 
 ---
 
-## 13. Seed довідників
+## 14. Seed довідників
 
 Після створення таблиць потрібно заповнити довідники:
 
@@ -446,9 +511,9 @@ python -m scripts.seed_dictionaries
 
 ---
 
-## 14. Основні таблиці
+## 15. Основні таблиці
 
-### 14.1. `tasks`
+### `tasks`
 
 Основна таблиця задач.
 
@@ -474,7 +539,7 @@ python -m scripts.seed_dictionaries
 | `source_text`              | Початковий текст користувача    |
 | `ai_confidence`            | Впевненість AI / parser         |
 
-### 14.2. `task_events`
+### `task_events`
 
 Таблиця історії змін задач.
 
@@ -489,7 +554,7 @@ python -m scripts.seed_dictionaries
 з якого джерела
 ```
 
-### 14.3. `task_previews`
+### `task_previews`
 
 Таблиця попередніх змін перед підтвердженням.
 
@@ -501,42 +566,9 @@ preview → confirm → write
 
 ---
 
-## 15. Довідники
-
-### 15.1. Пріоритети
-
-| Code       | Name     | Коефіцієнт |
-| ---------- | -------- | ---------: |
-| `critical` | Critical |       1.00 |
-| `high`     | High     |       0.80 |
-| `medium`   | Medium   |       0.60 |
-| `low`      | Low      |       0.50 |
-
-### 15.2. Складність
-
-| Code           | Name         | Коефіцієнт |
-| -------------- | ------------ | ---------: |
-| `very_complex` | Very Complex |       3.00 |
-| `complex`      | Complex      |       2.00 |
-| `moderate`     | Moderate     |       1.50 |
-| `easy`         | Easy         |       1.00 |
-
-### 15.3. Типи задач
-
-| Code           | Name       | Базовий час |
-| -------------- | ---------- | ----------: |
-| `db_reports`   | БД/Звіти   |           5 |
-| `pbi_reports`  | Звіти PBI  |           8 |
-| `requests`     | Запити     |           3 |
-| `ssrs_reports` | Звіти SSRS |           5 |
-
----
-
 ## 16. Логіка автостатусу
 
 Автостатус розраховується backend-ом, а не AI.
-
-Правила:
 
 | Умова                                      | Статус     |
 | ------------------------------------------ | ---------- |
@@ -547,7 +579,7 @@ preview → confirm → write
 | `fact_start_date > today`                  | `План`     |
 | Задача вручну поставлена на паузу          | `Пауза`    |
 
-Ця логіка реалізована в:
+Реалізація:
 
 ```text
 app/services/status_service.py
@@ -558,8 +590,6 @@ app/services/status_service.py
 ## 17. Логіка автооцінки задачі
 
 Автоматична оцінка задачі розраховується backend-ом.
-
-Формула:
 
 ```text
 auto_task_score = task_type.base_hours × priority.coefficient × complexity.coefficient
@@ -577,7 +607,7 @@ auto_task_score = task_type.base_hours × priority.coefficient × complexity.coe
 8 × 0.80 × 2.00 = 12.8 → 13.00
 ```
 
-Ця логіка реалізована в:
+Реалізація:
 
 ```text
 app/services/score_service.py
@@ -587,13 +617,13 @@ app/services/score_service.py
 
 ## 18. API endpoints
 
-### 18.1. Health
+### Health
 
 ```http
 GET /health
 ```
 
-### 18.2. Довідники
+### Довідники
 
 ```http
 GET /dicts/priorities
@@ -602,7 +632,7 @@ GET /dicts/task-types
 GET /dicts/task-score-matrix
 ```
 
-### 18.3. Задачі
+### Задачі
 
 ```http
 GET /tasks
@@ -610,7 +640,7 @@ GET /tasks/{task_id}
 GET /tasks/{task_id}/events
 ```
 
-### 18.4. Preview / Confirm / AI
+### Preview / Confirm / AI
 
 ```http
 POST /tasks/preview
@@ -619,7 +649,7 @@ POST /tasks/voice-preview
 POST /tasks/confirm
 ```
 
-### 18.5. Lifecycle workflows
+### Lifecycle workflows
 
 ```http
 POST /tasks/{task_id}/start
@@ -634,7 +664,7 @@ POST /tasks/{task_id}/close
 
 ## 19. Приклади API-запитів
 
-### 19.1. AI text preview
+### AI text preview
 
 ```powershell
 $body = @{
@@ -656,9 +686,7 @@ action = create_task
 can_confirm = True
 ```
 
----
-
-### 19.2. Voice transcript preview
+### Voice transcript preview
 
 ```powershell
 $body = @{
@@ -682,44 +710,7 @@ action = create_task
 can_confirm = True
 ```
 
----
-
-### 19.3. Structured preview нової задачі
-
-```powershell
-$body = @{
-    task_title = "Перевірити фільтри у звіті Support"
-    goal = "Зрозуміти, чому друга таблиця не реагує на частину фільтрів"
-    task_type_id = 2
-    business_area = "IT"
-    customer = "Кяшко"
-    priority_id = 2
-    complexity_id = 2
-    executor = "Кондес П."
-    planned_finish_date = "2026-06-14"
-    source_text = "додай задачу по звіту сапорт, треба перевірити фільтри"
-    created_by = "Кондес П."
-} | ConvertTo-Json
-
-Invoke-RestMethod `
-    -Uri http://localhost:8000/tasks/preview `
-    -Method Post `
-    -ContentType "application/json" `
-    -Body $body
-```
-
-Очікувано:
-
-```text
-action = create_task
-can_confirm = True
-```
-
----
-
-### 19.4. Підтвердити preview
-
-Потрібно взяти `preview_id` з відповіді preview endpoint.
+### Підтвердити preview
 
 ```powershell
 $body = @{
@@ -738,42 +729,6 @@ Invoke-RestMethod `
 ```text
 status = confirmed
 task_id = new task id
-```
-
----
-
-### 19.5. Переглянути задачу
-
-```powershell
-Invoke-RestMethod http://localhost:8000/tasks/4 | ConvertTo-Json -Depth 5
-```
-
----
-
-### 19.6. Переглянути історію змін задачі
-
-```powershell
-Invoke-RestMethod http://localhost:8000/tasks/4/events | ConvertTo-Json -Depth 5
-```
-
----
-
-### 19.7. Закрити задачу через preview
-
-```powershell
-$body = @{
-    fact_finish_date = "2026-06-11"
-    fact_hours = 3
-    short_status_description = "Перевірено фільтри та знайдено причину."
-    source_text = "закрий задачу по звіту Support, факт сьогодні, витратив 3 години"
-    created_by = "Кондес П."
-} | ConvertTo-Json
-
-Invoke-RestMethod `
-    -Uri http://localhost:8000/tasks/1/close `
-    -Method Post `
-    -ContentType "application/json" `
-    -Body $body
 ```
 
 ---
@@ -797,9 +752,9 @@ python -m pytest
 * імпорт FastAPI app;
 * логіку автостатусу;
 * логіку автооцінки;
-* округлення оцінки до `0.5` години;
 * mock AI parser;
-* базові сценарії парсингу тексту.
+* базові сценарії парсингу тексту;
+* стабільну роботу parser fallback.
 
 ---
 
@@ -807,142 +762,72 @@ python -m pytest
 
 Цей сценарій потрібен для перевірки, що основний функціонал MVP працює локально після запуску проєкту.
 
-### 21.1. Запустити проєкт
+1. Запустити проєкт:
 
 ```powershell
 docker compose up -d --build
 ```
 
-### 21.2. Перевірити health check
+2. Перевірити health check:
 
 ```powershell
 Invoke-RestMethod http://localhost:8000/health
 ```
 
-Очікуваний результат:
-
-```text
-status = ok
-database = ok
-```
-
-### 21.3. Перевірити text input workflow
+3. Перевірити text input workflow:
 
 ```http
 POST /tasks/ai-preview
 ```
 
-Цей endpoint приймає звичайний український текст задачі та формує preview.
-
-Сценарій:
-
-```text
-raw text
-→ mock AI parser
-→ structured payload
-→ preview
-```
-
-Очікуваний результат:
-
-```text
-action = create_task
-can_confirm = True
-```
-
-### 21.4. Перевірити voice transcript workflow
+4. Перевірити voice transcript workflow:
 
 ```http
 POST /tasks/voice-preview
 ```
 
-Цей endpoint приймає transcript голосової команди та формує preview.
-
-Сценарій:
-
-```text
-voice transcript
-→ mock AI parser
-→ structured payload
-→ preview
-```
-
-Очікуваний результат:
-
-```text
-action = create_task
-can_confirm = True
-```
-
-### 21.5. Підтвердити preview
+5. Підтвердити preview:
 
 ```http
 POST /tasks/confirm
 ```
 
-Після підтвердження preview задача записується в PostgreSQL.
-
-Очікуваний результат:
-
-```text
-status = confirmed
-task_id = new task id
-```
-
-### 21.6. Перевірити створену задачу
+6. Перевірити створену задачу:
 
 ```http
 GET /tasks/{task_id}
 ```
 
-Очікувано, що задача містить структуровані поля:
-
-```text
-task_title
-goal
-task_type
-business_area
-priority
-complexity
-planned_finish_date
-auto_status
-auto_task_score
-```
-
-### 21.7. Перевірити історію змін
+7. Перевірити історію змін:
 
 ```http
 GET /tasks/{task_id}/events
 ```
 
-Очікувано, що для створеної задачі є запис в `task_events`.
-
-Це підтверджує, що працює audit trail.
-
 ---
 
 ## 22. Відповідність критеріям LMS
 
-### 22.1. Дослідження та концепція
+### Дослідження та концепція
 
-| Критерій             | Як закрито                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------ |
-| Обґрунтування теми   | Проєкт вирішує проблему хаотичної фіксації задач із тексту, голосових команд і повідомлень |
-| Аналіз проблеми      | Описано проблему неструктурованого input і ризики AI-помилок                               |
-| Вибір стеку          | Обґрунтовано FastAPI, PostgreSQL, SQLAlchemy, Alembic, Docker, Pytest                      |
-| Очікуваний результат | Описано backend MVP з text / voice transcript input, preview, confirm і audit trail        |
+| Критерій             | Як закрито                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| Обґрунтування теми   | Проєкт вирішує проблему хаотичної фіксації задач із тексту, голосових команд і повідомлень       |
+| Аналіз проблеми      | Описано проблему неструктурованого input і ризики AI-помилок                                     |
+| Вибір стеку          | Обґрунтовано FastAPI, PostgreSQL, SQLAlchemy, Alembic, Docker, Pytest, OpenAI provider           |
+| Очікуваний результат | Описано backend MVP з text / voice transcript input, AI provider, preview, confirm і audit trail |
 
-### 22.2. Документація
+### Документація
 
-| Критерій            | Як закрито                                                         |
-| ------------------- | ------------------------------------------------------------------ |
-| Чіткий опис проєкту | Є в README і `docs/COURSE_SUBMISSION.md`                           |
-| Архітектурна логіка | Описано routers, schemas, services, models, DB, preview/confirm    |
-| Інструкція запуску  | Є Docker Compose, health check, Swagger, Adminer                   |
-| Залежності          | Описано технологічний стек                                         |
-| Сценарій перевірки  | Описано text preview, voice preview, confirm, task details, events |
+| Критерій            | Як закрито                                                                   |
+| ------------------- | ---------------------------------------------------------------------------- |
+| Чіткий опис проєкту | Є в README і `docs/COURSE_SUBMISSION.md`                                     |
+| Архітектурна логіка | Описано routers, schemas, services, models, DB, AI provider, preview/confirm |
+| Інструкція запуску  | Є Docker Compose, health check, Swagger, Adminer                             |
+| Залежності          | Описано технологічний стек                                                   |
+| Сценарій перевірки  | Описано text preview, voice preview, confirm, task details, events           |
 
-### 22.3. Працездатність MVP
+### Працездатність MVP
 
 | Критерій                  | Як закрито                                              |
 | ------------------------- | ------------------------------------------------------- |
@@ -951,15 +836,16 @@ GET /tasks/{task_id}/events
 | Основні сценарії працюють | ai-preview, voice-preview, confirm, lifecycle workflows |
 | Тести проходять           | `19 passed`                                             |
 
-### 22.4. Якість коду та архітектура
+### Якість коду та архітектура
 
 | Критерій                     | Як закрито                                                                  |
 | ---------------------------- | --------------------------------------------------------------------------- |
 | Логічна структура директорій | `app/routers`, `app/schemas`, `app/services`, `app/models`, `tests`, `docs` |
 | Clean Code                   | Бізнес-логіка винесена в services                                           |
+| AI provider layer            | Є mock fallback і optional OpenAI provider                                  |
 | Немає прямого AI write в DB  | Використано `preview → confirm`                                             |
 | Є audit trail                | Зміни пишуться в `task_events`                                              |
-| Доречні інструменти          | FastAPI, PostgreSQL, Alembic, SQLAlchemy, Docker, Pytest                    |
+| Доречні інструменти          | FastAPI, PostgreSQL, Alembic, SQLAlchemy, Docker, Pytest, OpenAI API        |
 
 ---
 
@@ -969,7 +855,7 @@ GET /tasks/{task_id}/events
 
 Обмеження:
 
-* використовується mock AI parser, а не реальний LLM;
+* реальний LLM parser реалізований як optional provider через `AI_PROVIDER=openai`, але для перевірки без API ключа за замовчуванням використовується `AI_PROVIDER=mock`;
 * пряме завантаження audio-файлу не входить у MVP;
 * власний speech-to-text engine не реалізований у цьому MVP;
 * голосовий сценарій реалізовано через обробку transcript;
@@ -991,20 +877,19 @@ GET /tasks/{task_id}/events
 
 Наступні можливі кроки:
 
-1. Замінити mock parser на реальний LLM parser.
-2. Додати JSON schema validation для AI-виводу.
-3. Додати guardrails для неповних або небезпечних змін.
-4. Додати пряме завантаження audio-файлу.
-5. Підключити Speech-to-Text, наприклад Whisper або OpenAI Audio API.
-6. Додати Telegram bot або простий frontend.
-7. Додати Excel export/import.
-8. Додати пошук задач.
-9. Додати semantic search через embeddings.
-10. Додати RAG для пошуку схожих задач або рекомендацій.
-11. Додати monitoring якості AI parser.
-12. Додати user authentication.
-13. Додати dashboard по задачах.
-14. Додати MCP server для інтеграції із зовнішніми AI agents.
+1. Додати пряме завантаження audio-файлу.
+2. Підключити Speech-to-Text, наприклад Whisper або OpenAI Audio API.
+3. Додати JSON schema validation rules для більш складних сценаріїв.
+4. Додати guardrails для неповних або небезпечних змін.
+5. Додати Telegram bot або простий frontend.
+6. Додати Excel export/import.
+7. Додати пошук задач.
+8. Додати semantic search через embeddings.
+9. Додати RAG для пошуку схожих задач або рекомендацій.
+10. Додати monitoring якості AI parser.
+11. Додати user authentication.
+12. Додати dashboard по задачах.
+13. Додати MCP server для інтеграції із зовнішніми AI agents.
 
 ---
 
@@ -1040,8 +925,6 @@ HEAD -> dev, tag: v0.1-course-mvp
 
 ## 26. Поточний статус
 
-Поточний статус:
-
 ```text
 MVP реалізовано.
 Backend запускається через Docker Compose.
@@ -1049,6 +932,8 @@ PostgreSQL працює.
 Health check працює.
 AI text preview працює.
 Voice transcript preview працює.
+Optional OpenAI parser provider реалізовано.
+Mock fallback працює без API ключа.
 Preview/confirm workflow працює.
 Task lifecycle workflows реалізовано.
 Audit trail реалізовано через task_events.
@@ -1068,6 +953,7 @@ Audit trail реалізовано через task_events.
 
 ```text
 У цьому MVP AI не приймає остаточне рішення і не пише напряму в базу.
-AI тільки допомагає перетворити текст або transcript голосової команди у structured payload.
+AI допомагає перетворити текст або transcript голосової команди у structured payload.
 Backend формує preview, користувач підтверджує зміни, і тільки після цього задача записується в PostgreSQL.
+Для стабільної перевірки використовується mock provider, а для реальної AI-обробки доступний optional OpenAI provider.
 ```

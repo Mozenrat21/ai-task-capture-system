@@ -120,7 +120,41 @@ voice command
 
 ---
 
-## 6. Очікуваний результат MVP
+## 6. Real AI parser scope
+
+Початково MVP використовував deterministic mock parser, щоб забезпечити стабільність локальної перевірки.
+
+Після доопрацювання додано provider-based AI parser:
+
+```text
+AI_PROVIDER=mock
+AI_PROVIDER=openai
+```
+
+Це дозволяє розділити два сценарії:
+
+1. **Offline verification** — перевіряючий може запустити проєкт без API ключа.
+2. **Real AI extraction** — при наявності OpenAI API key система може використовувати LLM для осмислення сирого тексту або transcript голосової команди.
+
+У режимі `openai` система вирішує саме ту задачу, для якої створювався проєкт:
+
+```text
+сирий неструктурований текст
+→ AI осмислення
+→ гарна назва задачі
+→ goal
+→ тип задачі
+→ пріоритет
+→ складність
+→ preview
+→ confirm
+```
+
+Mock provider не є фінальною AI-логікою. Він потрібен як стабільний fallback для тестів, локального запуску і здачі без зовнішніх секретів.
+
+---
+
+## 7. Очікуваний результат MVP
 
 Очікуваний результат MVP — працююча backend-система, яка:
 
@@ -132,15 +166,17 @@ voice command
 6. підтримує життєвий цикл задачі;
 7. використовує preview → confirm pattern;
 8. зберігає історію змін у task_events;
-9. має mock AI parser;
-10. дозволяє створювати задачу з українського тексту;
-11. дозволяє створювати задачу з transcript голосової команди;
-12. має тести;
-13. має документацію для запуску й пояснення архітектури.
+9. має provider-based AI parser;
+10. має mock fallback provider;
+11. має optional OpenAI LLM provider;
+12. дозволяє створювати задачу з українського тексту;
+13. дозволяє створювати задачу з transcript голосової команди;
+14. має тести;
+15. має документацію для запуску й пояснення архітектури.
 
 ---
 
-## 7. Межі MVP
+## 8. Межі MVP
 
 До MVP входить:
 
@@ -148,6 +184,9 @@ voice command
 * обробка transcript голосової команди;
 * створення preview задачі з raw text;
 * створення preview задачі з voice transcript;
+* provider-based AI parser;
+* optional real LLM parser через OpenAI provider;
+* mock fallback parser для запуску без API ключа;
 * підтвердження preview;
 * створення задачі;
 * старт задачі;
@@ -167,7 +206,6 @@ voice command
 
 * пряме завантаження audio-файлу;
 * власний speech-to-text engine;
-* реальний OpenAI / LLM parser;
 * frontend UI;
 * Telegram bot;
 * авторизацію;
@@ -182,7 +220,7 @@ voice command
 
 ---
 
-## 8. Voice-ready scope
+## 9. Voice-ready scope
 
 Початкова ідея проєкту включає не тільки текстове введення, а й голосове управління задачами.
 
@@ -216,38 +254,7 @@ transcript
 POST /tasks/voice-preview
 ```
 
-Він приймає:
-
-```json
-{
-  "transcript": "Додай складну задачу по PBI звіту для Сільпо, високий пріоритет, до 2026-07-01",
-  "created_by": "Кондес П.",
-  "language": "uk-UA",
-  "speech_confidence": 0.91
-}
-```
-
 Повноцінна обробка audio-файлу залишена за межами MVP, оскільки це окрема інтеграція зі speech-to-text сервісом, наприклад Whisper, OpenAI Audio API, Google Speech-to-Text або іншим STT-рішенням.
-
----
-
-## 9. Чому використовується mock AI parser
-
-У поточній версії використовується deterministic mock AI parser.
-
-Причини:
-
-1. **Стабільність для MVP.**
-   Mock parser не залежить від зовнішнього API, ключів, лімітів або інтернет-з’єднання.
-
-2. **Повторюваність результату.**
-   Для тестів і демо важливо, щоб однаковий текст давав однаковий результат.
-
-3. **Архітектурна замінність.**
-   Parser винесений в окремий service layer, тому його можна замінити на реальний LLM parser без зміни загального workflow.
-
-4. **Безпечне демо.**
-   На захисті можна показати весь шлях text / transcript → structured payload → preview → confirm → DB без ризику, що зовнішня модель поверне нестабільну відповідь.
 
 ---
 
@@ -284,15 +291,17 @@ AI output → backend validation → preview → user confirmation → database 
 
 ## 11. Вибір технологій
 
-| Технологія     | Чому використовується                      |
-| -------------- | ------------------------------------------ |
-| FastAPI        | API layer, Swagger UI, Pydantic validation |
-| PostgreSQL     | Надійне structured data сховище            |
-| SQLAlchemy     | ORM для моделей і роботи з БД              |
-| Alembic        | Контрольовані міграції                     |
-| Docker Compose | Відтворюваний локальний запуск             |
-| Pytest         | Перевірка бізнес-логіки                    |
-| Adminer        | Простий перегляд PostgreSQL                |
+| Технологія      | Чому використовується                                 |
+| --------------- | ----------------------------------------------------- |
+| FastAPI         | API layer, Swagger UI, Pydantic validation            |
+| PostgreSQL      | Надійне structured data сховище                       |
+| SQLAlchemy      | ORM для моделей і роботи з БД                         |
+| Alembic         | Контрольовані міграції                                |
+| OpenAI provider | Реальна AI-обробка сирого тексту в structured payload |
+| Mock provider   | Стабільна перевірка без зовнішнього API ключа         |
+| Docker Compose  | Відтворюваний локальний запуск                        |
+| Pytest          | Перевірка бізнес-логіки                               |
+| Adminer         | Простий перегляд PostgreSQL                           |
 
 ---
 
@@ -303,27 +312,102 @@ AI output → backend validation → preview → user confirmation → database 
 1. **Structured output**
    Неструктурований текст або transcript перетворюється у structured payload.
 
-2. **Human-in-the-loop**
+2. **Provider-based AI architecture**
+   Є mock fallback і optional OpenAI LLM provider.
+
+3. **Human-in-the-loop**
    Користувач підтверджує запропоновані зміни.
 
-3. **Validation before write**
+4. **Validation before write**
    Дані не записуються одразу в базу.
 
-4. **Replaceable AI component**
-   Mock parser можна замінити на реальний LLM parser.
+5. **Replaceable AI component**
+   Parser винесено в service layer, тому provider можна замінити або розширити.
 
-5. **Voice-ready architecture**
+6. **Voice-ready architecture**
    Система готова приймати transcript голосової команди.
 
-6. **Auditability**
+7. **Auditability**
    Усі підтверджені зміни пишуться в task_events.
 
-7. **Production-like setup**
+8. **Production-like setup**
    Docker Compose, PostgreSQL, Alembic, тести.
 
 ---
 
-## 13. Як перевірити результат
+## 13. Альтернативи, які розглядалися
+
+### Excel
+
+Плюси:
+
+* швидко;
+* знайомий інструмент.
+
+Мінуси:
+
+* немає API;
+* немає audit trail;
+* немає контрольованого AI workflow;
+* складно масштабувати.
+
+### Простий CRUD API
+
+Плюси:
+
+* швидше реалізувати.
+
+Мінуси:
+
+* немає AI Engineering складової;
+* немає preview/confirm;
+* менше цінності для курсу.
+
+### Тільки real LLM без fallback
+
+Плюси:
+
+* сильна AI-складова.
+
+Мінуси:
+
+* потрібні API keys;
+* тести стають нестабільними;
+* перевірка залежить від зовнішнього сервісу.
+
+### Обране рішення
+
+Обрано provider-based підхід:
+
+```text
+AI_PROVIDER=mock
+AI_PROVIDER=openai
+```
+
+Це дає баланс:
+
+* стабільна перевірка без ключа;
+* реальна AI-інтеграція при наявності OpenAI API key;
+* правильна архітектура для розвитку.
+
+---
+
+## 14. Ризики та обмеження
+
+| Ризик                           | Як зменшується                    |
+| ------------------------------- | --------------------------------- |
+| AI неправильно розпізнає задачу | preview перед записом             |
+| Некоректні статуси              | статус рахує backend              |
+| Неправильна оцінка задачі       | score рахується за довідниками    |
+| Втрата історії змін             | task_events                       |
+| Складний запуск                 | Docker Compose                    |
+| Відсутність API key             | mock fallback provider            |
+| Нестабільність зовнішнього LLM  | fallback + тести на mock provider |
+| Неконтрольований запис          | confirm required                  |
+
+---
+
+## 15. Як перевірити результат
 
 Мінімальний smoke-test:
 
@@ -340,7 +424,7 @@ database = ok
 19 passed
 ```
 
-Основні demo endpoints:
+Основні endpoints:
 
 ```http
 POST /tasks/ai-preview
@@ -352,13 +436,15 @@ GET /tasks/{id}/events
 
 ---
 
-## 14. Очікуваний фінальний результат
+## 16. Очікуваний фінальний результат
 
 Фінальний результат MVP:
 
 * користувач може ввести задачу українською мовою;
 * користувач може передати transcript голосової команди;
 * система перетворює текст / transcript у structured payload;
+* у режимі `openai` система використовує реальний LLM parser;
+* у режимі `mock` система працює без зовнішнього API ключа;
 * система формує preview;
 * користувач підтверджує preview;
 * задача записується в PostgreSQL;
@@ -369,12 +455,26 @@ GET /tasks/{id}/events
 
 ---
 
-## 15. Висновок
+## 17. Висновок
 
-AI Task Capture System демонструє production-oriented AI Engineering підхід:
+AI Task Capture System демонструє production-oriented AI Engineering підхід.
+
+Головна ідея:
 
 ```text
 AI допомагає структурувати задачі, але не приймає остаточне рішення без користувача.
 ```
 
-У межах MVP реалізовано текстове введення та voice-ready сценарій через transcript. Повна обробка audio-файлу залишена як наступний етап розвитку.
+У межах MVP реалізовано:
+
+* текстове введення;
+* voice-ready сценарій через transcript;
+* provider-based AI parser;
+* optional OpenAI LLM provider;
+* mock fallback provider;
+* preview → confirm;
+* audit trail;
+* Docker-запуск;
+* тести.
+
+Це робить систему контрольованою, прозорою та придатною для подальшого розвитку в реальний робочий AI-powered інструмент.
