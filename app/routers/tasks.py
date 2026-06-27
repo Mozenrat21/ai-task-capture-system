@@ -121,6 +121,7 @@ def preview_create_task_from_ai_text(
         executor=parsed_task.executor,
         planned_finish_date=parsed_task.planned_finish_date,
         source_text=parsed_task.source_text,
+        ai_confidence=parsed_task.ai_confidence,
         created_by=parsed_task.created_by,
     )
 

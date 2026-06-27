@@ -16,6 +16,10 @@ class Settings(BaseSettings):
         "postgresql+psycopg://task_user:task_password@localhost:5433/task_capture_db"
     )
 
+    ai_provider: str = "mock"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini" 
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
