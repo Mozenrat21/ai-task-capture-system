@@ -13,6 +13,9 @@ services:
       APP_NAME: "AI Task Capture System"
       APP_ENV: "docker"
       DATABASE_URL: "postgresql+psycopg://task_user:task_password@db:5432/task_capture_db"
+      AI_PROVIDER: "${AI_PROVIDER:-mock}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o-mini}"
     depends_on:
       db:
         condition: service_healthy
