@@ -30,12 +30,62 @@ from app.services.preview_service import (
     create_task_preview,
 )
 from app.schemas.task_event import TaskEventResponse
+from app.schemas.ai_parser import AIParseTaskRequest
+from app.services.ai_parser_service import parse_task_text
 
 
 router = APIRouter(
     prefix="/tasks",
     tags=["tasks"],
 )
+
+@router.post("/ai-preview", response_model=TaskPreviewResponse)
+def preview_create_task_from_ai_text(
+    request: AIParseTaskRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Creates task preview from raw Ukrainian text.
+
+    Flow:
+    raw_text -> mock AI parser -> structured task payload -> preview.
+    """
+
+    parsed_task = parse_task_text(
+        raw_text=request.raw_text,
+        created_by=request.created_by,
+    )
+
+    preview_request = TaskCreatePreviewRequest(
+        task_title=parsed_task.task_title,
+        goal=parsed_task.goal,
+        task_type_id=parsed_task.task_type_id,
+        business_area=parsed_task.business_area,
+        customer=parsed_task.customer,
+        priority_id=parsed_task.priority_id,
+        complexity_id=parsed_task.complexity_id,
+        executor=parsed_task.executor,
+        planned_finish_date=parsed_task.planned_finish_date,
+        source_text=parsed_task.source_text,
+        created_by=parsed_task.created_by,
+    )
+
+    preview = create_task_preview(
+        db=db,
+        request=preview_request,
+    )
+
+    resolved_changes = preview.resolved_changes or {}
+    proposed_changes = resolved_changes.get("proposed_changes", [])
+
+    return TaskPreviewResponse(
+        preview_id=preview.id,
+        action=preview.action,
+        target_task_id=preview.target_task_id,
+        proposed_changes=proposed_changes,
+        warnings=preview.warnings or [],
+        can_confirm=len(preview.warnings or []) == 0,
+    )
 
 @router.post("/preview", response_model=TaskPreviewResponse)
 def preview_create_task(

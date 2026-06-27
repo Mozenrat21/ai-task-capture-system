@@ -20,7 +20,7 @@ def test_parse_task_text_detects_pbi_task():
 
 def test_parse_task_text_detects_critical_request():
     result = parse_task_text(
-        raw_text="Терміново заведи задачу для бізнесу, аварія в сервісі",
+        raw_text="Терміново заведи задачу для Сільпо, аварія в сервісі",
         created_by="Кондес П.",
     )
 
