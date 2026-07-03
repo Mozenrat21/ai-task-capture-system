@@ -42,6 +42,21 @@ router = APIRouter(
     tags=["tasks"],
 )
 
+def parse_task_text_or_raise_http(raw_text: str, created_by: str | None):
+    """
+    Parses task text and converts parser/provider errors into clear API errors.
+    """
+
+    try:
+        return parse_task_text(
+            raw_text=raw_text,
+            created_by=created_by,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
 @router.post("/voice-preview", response_model=TaskPreviewResponse)
 def preview_create_task_from_voice_transcript(
     request: AIVoiceTranscriptPreviewRequest,
@@ -61,7 +76,7 @@ def preview_create_task_from_voice_transcript(
     It accepts already recognized transcript text.
     """
 
-    parsed_task = parse_task_text(
+    parsed_task = parse_task_text_or_raise_http(
         raw_text=request.transcript,
         created_by=request.created_by,
     )
@@ -114,7 +129,7 @@ def preview_create_task_from_ai_text(
     - openai: real LLM structured extraction
     """
 
-    parsed_task = parse_task_text(
+    parsed_task = parse_task_text_or_raise_http(
         raw_text=request.raw_text,
         created_by=request.created_by,
     )
