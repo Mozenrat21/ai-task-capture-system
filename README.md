@@ -895,7 +895,21 @@ text input / voice transcript
 
 ---
 
-## 26. Поточний стан реалізації
+## 26. Production hardening after MVP
+
+Після фінального course MVP tag `v0.1-course-mvp` гілка `dev` продовжує розвиватися як production-oriented версія.
+
+Додано:
+
+- обробку помилок AI parser provider;
+- перетворення parser/provider помилок у зрозумілі HTTP responses;
+- API tests для негативних сценаріїв;
+- GitHub Actions workflow для автоматичного запуску `pytest`;
+- стабільний CI-режим через `AI_PROVIDER=mock`.
+
+Це означає, що курсова MVP-версія залишається зафіксованою тегом `v0.1-course-mvp`, а гілка `dev` містить наступні production hardening покращення.
+
+## 27. Поточний статус
 
 У поточній версії реалізовано:
 
@@ -916,7 +930,7 @@ Audit trail реалізовано через task_events.
 
 ---
 
-## 27. Ключовий архітектурний принцип
+## 28. Ключовий архітектурний принцип
 
 ```text
 AI не приймає остаточне рішення і не пише напряму в базу.
