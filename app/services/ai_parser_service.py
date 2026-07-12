@@ -309,6 +309,15 @@ def _detect_task_type(normalized_text: str) -> int:
     if "ssrs" in normalized_text:
         return TASK_TYPE_IDS["ssrs_reports"]
 
+    db_keywords = [
+        "sql",
+        "бд",
+        "база даних",
+        "базі даних",
+        "бази даних",
+        "database",
+    ]
+
     pbi_keywords = [
         "pbi",
         "power bi",
@@ -318,18 +327,11 @@ def _detect_task_type(normalized_text: str) -> int:
         "звіту",
     ]
 
-    db_keywords = [
-        "sql",
-        "бд",
-        "база даних",
-        "database",
-    ]
+    if any(keyword in normalized_text for keyword in db_keywords):
+        return TASK_TYPE_IDS["db_reports"]
 
     if any(keyword in normalized_text for keyword in pbi_keywords):
         return TASK_TYPE_IDS["pbi_reports"]
-
-    if any(keyword in normalized_text for keyword in db_keywords):
-        return TASK_TYPE_IDS["db_reports"]
 
     return TASK_TYPE_IDS["requests"]
 
